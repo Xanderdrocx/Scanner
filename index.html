@@ -178,5 +178,15 @@
         window.dbRef = firebase.database().ref('inventory');
         console.log('🔥 Firebase ready (compat mode)');
     </script>
+    <script>
+    // Register Service Worker for offline mode
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/sw.js')
+                .then(reg => console.log('✅ Offline mode ready'))
+                .catch(err => console.log('❌ Offline mode failed:', err));
+        });
+    }
+</script>
 </body>
 </html>
