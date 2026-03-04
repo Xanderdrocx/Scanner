@@ -239,8 +239,8 @@ function selectMaterial(code) {
             </div>
         </div>
         <div class="material-actions">
-            <button onclick="showReceiveForm('${material.code}')" class="btn-receive">📦 Receive</button>
-            <button onclick="showIssueForm('${material.code}')" class="btn-issue">🏭 Issue</button>
+            <button onclick="showReceiveForm('${material.code}')" class="btn-receive">📦 Expand</button>
+            <button onclick="showIssueForm('${material.code}')" class="btn-issue">✏️ Modify</button>
             <button onclick="showCountForm('${material.code}')" class="btn-count">📊 Count</button>
             <button onclick="printSingleBarcode('${material.code}', '${material.name}')" class="btn-print">🖨️ Print Label</button>
             <button onclick="deleteMaterial('${material.code}')" class="btn-delete">🗑️ Delete</button>
@@ -353,11 +353,10 @@ function saveNewMaterial() {
     document.getElementById('newStock').value = '0';
 }
 
-// Receive stock
+// Receive stock 
 function saveReceive() {
     let code = document.getElementById('receiveForm').dataset.code;
     let qty = parseInt(document.getElementById('receiveQty').value);
-    let note = document.getElementById('receiveNote').value;
     
     if (!qty || qty < 1) {
         alert('Enter valid quantity');
@@ -375,7 +374,7 @@ function saveReceive() {
     
     saveMaterials();
     
-    // Add activity
+    // Add activity 
     activities.unshift({
         id: Date.now(),
         action: 'RECEIVE',
@@ -384,7 +383,7 @@ function saveReceive() {
         quantity: qty,
         old_stock: oldStock,
         new_stock: material.stock,
-        note: note,
+        note: 'Manual expand',
         timestamp: new Date().toLocaleString()
     });
     saveActivities();
@@ -394,16 +393,14 @@ function saveReceive() {
     hideAllForms();
     
     document.getElementById('receiveQty').value = '';
-    document.getElementById('receiveNote').value = '';
     
-    alert(`✅ Received ${qty} ${material.unit}\nNew stock: ${material.stock}`);
+    alert(`✅ Added ${qty} ${material.unit}\nNew stock: ${material.stock}`);
 }
 
-// Issue stock
+// Issue stock (Modify)
 function saveIssue() {
     let code = document.getElementById('issueForm').dataset.code;
     let qty = parseInt(document.getElementById('issueQty').value);
-    let note = document.getElementById('issueNote').value;
     
     if (!qty || qty < 1) {
         alert('Enter valid quantity');
@@ -426,7 +423,7 @@ function saveIssue() {
     
     saveMaterials();
     
-    // Add activity
+    // Add activity (simplified)
     activities.unshift({
         id: Date.now(),
         action: 'ISSUE',
@@ -435,7 +432,7 @@ function saveIssue() {
         quantity: qty,
         old_stock: oldStock,
         new_stock: material.stock,
-        note: note,
+        note: 'Manual modify',
         timestamp: new Date().toLocaleString()
     });
     saveActivities();
@@ -445,9 +442,8 @@ function saveIssue() {
     hideAllForms();
     
     document.getElementById('issueQty').value = '';
-    document.getElementById('issueNote').value = '';
     
-    alert(`✅ Issued ${qty} ${material.unit}\nNew stock: ${material.stock}`);
+    alert(`✅ Removed ${qty} ${material.unit}\nNew stock: ${material.stock}`);
 }
 
 // Stock count adjustment

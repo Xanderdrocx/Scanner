@@ -56,7 +56,7 @@
                     <option value="Paint">Paint</option>
                 </select>
                 <input type="text" id="newUnit" placeholder="Unit (e.g., pieces, pairs, kg)" value="pieces">
-                <input type="number" id="newStock" placeholder="Initial Stock" value="0">
+                <input type="number" id="newStock" placeholder="Quantity">
                 <div class="form-actions">
                     <button onclick="saveNewMaterial()" class="btn-save">Save</button>
                     <button onclick="hideAllForms()" class="btn-cancel">Cancel</button>
@@ -65,46 +65,34 @@
 
             <!-- Receive Form -->
             <div id="receiveForm" class="form-card hidden">
-                <h3>📦 Receive Stock</h3>
+                <h3>📦 Expand Stock</h3>
                 <p id="receiveMaterialInfo"></p>
                 <input type="number" id="receiveQty" placeholder="Quantity to add" min="1">
-                <input type="text" id="receiveNote" placeholder="Notes (e.g., From JSW Steel)">
                 <div class="form-actions">
                     <button onclick="saveReceive()" class="btn-save">Add to Stock</button>
                     <button onclick="hideAllForms()" class="btn-cancel">Cancel</button>
                 </div>
             </div>
-
             <!-- Issue Form -->
             <div id="issueForm" class="form-card hidden">
-                <h3>🏭 Issue Stock</h3>
+                <h3>✏️ Modify Stock (Remove)</h3>
                 <p id="issueMaterialInfo"></p>
                 <input type="number" id="issueQty" placeholder="Quantity to remove" min="1">
-                <input type="text" id="issueNote" placeholder="Notes (e.g., To fabrication)">
                 <div class="form-actions">
                     <button onclick="saveIssue()" class="btn-save">Remove from Stock</button>
                     <button onclick="hideAllForms()" class="btn-cancel">Cancel</button>
                 </div>
             </div>
-
             <!-- Count Form -->
             <div id="countForm" class="form-card hidden">
                 <h3>📊 Physical Count</h3>
                 <p id="countMaterialInfo"></p>
                 <input type="number" id="countQty" placeholder="Actual physical count">
-                <select id="countReason">
-                    <option value="Counting error">Counting error</option>
-                    <option value="Damaged">Damaged</option>
-                    <option value="Lost">Lost/Theft</option>
-                    <option value="Other">Other</option>
-                </select>
                 <div class="form-actions">
                     <button onclick="saveCount()" class="btn-save">Update Stock</button>
                     <button onclick="hideAllForms()" class="btn-cancel">Cancel</button>
                 </div>
-            </div>
-        </div>
-
+            </div>  
         <!-- Materials Table -->
         <div class="materials-section">
             <div class="table-header">
