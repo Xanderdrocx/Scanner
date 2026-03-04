@@ -610,28 +610,77 @@ function toggleCamera() {
     let readerDiv = document.getElementById('reader');
     
     if (!isScanning) {
+        // Check if library is loaded
+        if (typeof Html5QrcodeScanner === 'undefined') {
+            alert('Camera scanner library not loaded. Please refresh the page.');
+            console.error('Html5QrcodeScanner is not defined');
+            return;
+        }
+        
         readerDiv.style.display = 'block';
         cameraBtn.textContent = '⏹️ Stop Camera';
         cameraBtn.classList.add('active');
         
-        html5QrcodeScanner = new Html5QrcodeScanner(
-            "reader", 
-            { fps: 10, qrbox: { width: 250, height: 250 } },
-            false
-        );
-        
-        html5QrcodeScanner.render(onScanSuccess, onScanError);
-        isScanning = true;
+        try {
+            html5QrcodeScanner = new Html5QrcodeScanner(
+                "reader", 
+                { 
+                    fps: 10, 
+                    qrbox: { width: 250, height: 250 },
+                    rememberLastUsedCamera: true,
+                    showTorchButtonIfSupported: true
+                },
+                /* verbose= */ false
+            );
+            
+            html5QrcodeScanner.render(onScanSuccess, onScanError);
+            isScanning = true;
+            console.log('Camera scanner started');
+        } catch (error) {
+            console.error('Error starting camera:', error);
+            alert('Failed to start camera. Please check permissions.');
+            readerDiv.style.display = 'none';
+            cameraBtn.textContent = '📷 Scan with Camera';
+            cameraBtn.classList.remove('active');
+        }
     } else {
         if (html5QrcodeScanner) {
-            html5QrcodeScanner.clear();
-            html5QrcodeScanner = null;
+            try {
+                html5QrcodeScanner.clear();
+                html5QrcodeScanner = null;
+            } catch (error) {
+                console.error('Error stopping camera:', error);
+            }
         }
         readerDiv.style.display = 'none';
         cameraBtn.textContent = '📷 Scan with Camera';
         cameraBtn.classList.remove('active');
         isScanning = false;
+        console.log('Camera scanner stopped');
     }
+}
+
+function onScanSuccess(decodedText, decodedResult) {
+    console.log('Scan success:', decodedText);
+    
+    // Stop camera
+    if (isScanning) {
+        toggleCamera();
+    }
+    
+    // Put in search box and search
+    document.getElementById('searchInput').value = decodedText;
+    searchMaterial(decodedText);
+    
+    // Optional: beep or vibrate
+    try {
+        if (navigator.vibrate) navigator.vibrate(200);
+    } catch (e) {}
+}
+
+function onScanError(errorMessage) {
+    // Ignore most errors - they're usually just "no barcode found"
+    // console.log('Scan error:', errorMessage);
 }
 
 function onScanSuccess(decodedText, decodedResult) {
