@@ -31,7 +31,7 @@ function initDatabase() {
                 // Ensure all fields exist with defaults
                 return {
                     id: m.id || Date.now() + Math.floor(Math.random() * 1000),
-                    code: m.code || 'FIX-' + Math.floor(Math.random() * 10000),
+                    code: m.code || Math.floor(100000 + Math.random() * 900000).toString(),
                     name: m.name || 'Unknown Material',
                     category: m.category || 'Steel',
                     stock: typeof m.stock === 'number' ? m.stock : 0,
@@ -87,7 +87,7 @@ function initDatabase() {
                     .filter(m => m !== null && typeof m === 'object')
                     .map(m => ({
                         id: m.id || Date.now() + Math.floor(Math.random() * 1000),
-                        code: m.code || 'FIX-' + Math.floor(Math.random() * 10000),
+                        code: m.code || Math.floor(100000 + Math.random() * 900000).toString(),
                         name: m.name || 'Unknown Material',
                         category: m.category || 'Steel',
                         stock: typeof m.stock === 'number' ? m.stock : 0,
@@ -139,50 +139,10 @@ function saveActivities() {
 }
 
 // ==================== CORE FUNCTIONS ====================
-// Generate code from name
-function generateCode(name, category) {
-    // Safety checks
-    if (!name || name.trim() === '') {
-        console.warn('Empty name provided, using default');
-        name = 'Material-' + Date.now();
-    }
-    
-    if (!category || category.trim() === '') {
-        category = 'Steel';
-    }
-    
-    name = name.trim();
-    category = category.trim();
-    
-    let cat = category.substring(0, 2).toUpperCase();
-    let words = name.split(' ');
-    let codePart = '';
-    
-    if (words.length > 1) {
-        codePart = words[0][0] + words[1].substring(0, 2);
-    } else {
-        codePart = name.substring(0, 3);
-    }
-    
-    let numbers = name.match(/\d+/g);
-    let numPart = numbers ? numbers[0] : '';
-    
-    let code = `${cat}-${codePart.toUpperCase()}${numPart}`;
-    
-    // Make sure materials exists
-    if (!Array.isArray(materials)) {
-        materials = [];
-    }
-    
-    // Make sure code is unique
-    let counter = 1;
-    let originalCode = code;
-    while (materials.some(m => m && m.code === code)) {
-        code = `${originalCode}-${counter}`;
-        counter++;
-    }
-    
-    return code;
+function generateRandomId() {
+    // Generate random 6-digit number
+    let randomId = Math.floor(100000 + Math.random() * 900000); // 100000-999999
+    return randomId.toString();
 }
 
 // Get stock status
@@ -256,17 +216,43 @@ function updateTable() {
     document.getElementById('tableBody').innerHTML = html;
 }
 
+// ==================== DUPLICATE DETECTION ====================
+function checkDuplicateName(name, currentCode = null) {
+    if (!name || name.trim() === '') return false;
+    
+    name = name.trim().toLowerCase();
+
+    let duplicate = materials.find(m => {
+        if (!m || !m.name) return false;
+    
+        if (currentCode && m.code === currentCode) return false;
+        
+        return m.name.toLowerCase() === name;
+    });
+    
+    return duplicate || null;
+}
+function isIdUnique(id) {
+    return !materials.some(m => m && m.code === id);
+}
+
 // Update category filter dropdown with all categories
 function updateCategoryFilter() {
     let filterSelect = document.getElementById('categoryFilter');
     
-    // Get unique categories
-    let allCategories = ['ALL'];
+    // Get unique categories (case-insensitive, with proper caps)
+    let categoryMap = new Map();
+    
     materials.forEach(m => {
-        if (m && m.category && !allCategories.includes(m.category)) {
-            allCategories.push(m.category);
+        if (m && m.category) {
+            let lowerCat = m.category.toLowerCase();
+            // Store the properly capitalized version
+            categoryMap.set(lowerCat, m.category);
         }
     });
+    
+    // Convert to array and sort
+    let allCategories = ['ALL', ...Array.from(categoryMap.values()).sort()];
     
     // Save current selection
     let currentValue = filterSelect.value;
@@ -289,27 +275,332 @@ function filterMaterials() {
     updateTable();
 }
 
-// Search material
-function searchMaterial(barcode) {
-    let searchTerm = barcode || document.getElementById('searchInput').value.trim().toUpperCase();
+// ==================== ENHANCED SEARCH FUNCTIONS ====================
+
+// Global search variables
+let searchTimeout = null;
+let lastSearchTerm = '';
+
+// Setup enhanced search
+function setupEnhancedSearch() {
+    let searchInput = document.getElementById('searchInput');
     
-    if (!searchTerm) return;
+    // Remove any existing listeners
+    searchInput.removeEventListener('input', handleSearchInput);
+    searchInput.removeEventListener('keypress', handleSearchKeypress);
     
-    let material = materials.find(m => m.code.toUpperCase() === searchTerm);
+    // Add new listeners
+    searchInput.addEventListener('input', handleSearchInput);
+    searchInput.addEventListener('keypress', handleSearchKeypress);
     
-    if (material) {
-        selectMaterial(material.code);
-    } else {
-        material = materials.find(m => m.name.toUpperCase().includes(searchTerm));
-        if (material) {
-            selectMaterial(material.code);
-        } else {
-            if (confirm(`Material not found: ${searchTerm}\n\nAdd as new material?`)) {
-                document.getElementById('newName').value = searchTerm;
-                showAddForm();
+    console.log('🔍 Enhanced search initialized');
+}
+
+// Handle real-time search as user types
+function handleSearchInput(e) {
+    let searchTerm = e.target.value.trim();
+    
+    // Clear previous timeout
+    if (searchTimeout) {
+        clearTimeout(searchTimeout);
+    }
+    
+    // If search is empty, show all materials
+    if (searchTerm === '') {
+        updateTable();
+        hideSearchResults();
+        return;
+    }
+    
+    // Set timeout to search after user stops typing (300ms)
+    searchTimeout = setTimeout(() => {
+        performSmartSearch(searchTerm);
+    }, 300);
+}
+
+// Handle Enter key press
+function handleSearchKeypress(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        let searchTerm = e.target.value.trim();
+        
+        if (searchTerm) {
+            // Clear any pending timeout
+            if (searchTimeout) {
+                clearTimeout(searchTimeout);
+            }
+            let results = performSmartSearch(searchTerm, true);
+             if (results && results.length > 0) {
+                selectMaterial(results[0].code);
             }
         }
     }
+}
+
+// Perform smart search (fuzzy, case-insensitive)
+function performSmartSearch(searchTerm, prioritizeExact = false) {
+    if (!searchTerm || searchTerm.length < 1) {
+        updateTable();
+        return [];
+    }
+    
+    searchTerm = searchTerm.toLowerCase();
+    console.log('Searching for:', searchTerm);
+    
+    // Score each material based on relevance
+    let results = materials.map(material => {
+        let score = 0;
+        let nameLower = (material.name || '').toLowerCase();
+        let codeLower = (material.code || '').toLowerCase();
+        let categoryLower = (material.category || '').toLowerCase();
+        
+        // Exact matches (highest score)
+        if (codeLower === searchTerm) score += 100;
+        else if (nameLower === searchTerm) score += 90;
+        
+        // Starts with search term
+        if (codeLower.startsWith(searchTerm)) score += 50;
+        if (nameLower.startsWith(searchTerm)) score += 45;
+        
+        // Contains search term
+        if (codeLower.includes(searchTerm)) score += 30;
+        if (nameLower.includes(searchTerm)) score += 25;
+        if (categoryLower.includes(searchTerm)) score += 10;
+        
+        // Word boundary matches (e.g., "16mm" matches "16mm Round Bar")
+        let words = nameLower.split(' ');
+        words.forEach(word => {
+            if (word.startsWith(searchTerm)) score += 20;
+            if (word.includes(searchTerm)) score += 5;
+        });
+        
+        // Partial matches for short search terms (1-2 letters)
+        if (searchTerm.length === 1) {
+            if (codeLower.includes(searchTerm)) score += 2;
+            if (nameLower.includes(searchTerm)) score += 1;
+        }
+        
+        return {
+            material: material,
+            score: score
+        };
+    });
+    
+    // Filter out zero scores and sort by score (highest first)
+    let filteredResults = results
+        .filter(r => r.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .map(r => r.material);
+    
+    // If we have results, show them
+    if (filteredResults.length > 0) {
+        showSearchResults(filteredResults, searchTerm);
+    } else {
+        // No results found
+        showNoResults(searchTerm);
+    }
+        return filteredResults;
+}
+
+// Show search results in table
+function showSearchResults(results, searchTerm) {
+    let tableBody = document.getElementById('tableBody');
+    
+    if (results.length === 0) {
+        showNoResults(searchTerm);
+        return;
+    }
+    
+    let html = '';
+    results.forEach(m => {
+        if (!m) return;
+        
+        let code = m.code || 'NO-CODE';
+        let name = m.name || 'Unknown';
+        let category = m.category || 'Steel';
+        let stock = typeof m.stock === 'number' ? m.stock : 0;
+        let unit = m.unit || 'pieces';
+        
+        // Highlight matching text (optional)
+        let highlightedName = highlightMatch(name, searchTerm);
+        let highlightedCode = highlightMatch(code, searchTerm);
+        
+        let status = getStockStatus(stock);
+        let statusClass = status === 'Critical' ? 'status-critical' : 
+                         status === 'Low' ? 'status-low' : 'status-ok';
+        
+        html += `
+            <tr>
+                <td><strong>${highlightedCode}</strong></td>
+                <td>${highlightedName}</td>
+                <td>${category}</td>
+                <td>${stock}</td>
+                <td>${unit}</td>
+                <td><span class="status-badge ${statusClass}">${status}</span></td>
+                <td>
+                    <div class="action-buttons">
+                        <button onclick="selectMaterial('${code}')" class="action-btn edit-btn">View</button>
+                        <button onclick="printSingleBarcode('${code}', '${name}')" class="action-btn print-btn">🖨️</button>
+                        <button onclick="deleteMaterial('${code}')" class="action-btn delete-btn">✗</button>
+                    </div>
+                </td>
+            </tr>
+        `;
+    });
+    
+    // Add search result summary
+    let resultSummary = `
+        <div style="margin: 10px 0; padding: 8px; background: #e3f2fd; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;">
+            <span>🔍 Found <strong>${results.length}</strong> result${results.length > 1 ? 's' : ''} for "${searchTerm}"</span>
+            <button onclick="clearSearch()" style="background: none; border: none; color: #2196f3; cursor: pointer; font-size: 14px;">✕ Clear search</button>
+        </div>
+    `;
+    
+    tableBody.innerHTML = resultSummary + html;
+}
+
+// Highlight matching text
+function highlightMatch(text, searchTerm) {
+    if (!text || !searchTerm) return text;
+    
+    let lowerText = text.toLowerCase();
+    let lowerSearch = searchTerm.toLowerCase();
+    let index = lowerText.indexOf(lowerSearch);
+    
+    if (index === -1) return text;
+    
+    let before = text.substring(0, index);
+    let match = text.substring(index, index + searchTerm.length);
+    let after = text.substring(index + searchTerm.length);
+    
+    return `${before}<span style="background-color: #fff3cd; font-weight: bold;">${match}</span>${after}`;
+}
+
+// Show no results message
+function showNoResults(searchTerm) {
+    let tableBody = document.getElementById('tableBody');
+    tableBody.innerHTML = `
+        <tr>
+            <td colspan="7" style="text-align: center; padding: 40px; color: #666;">
+                <div style="font-size: 48px; margin-bottom: 20px;">🔍</div>
+                <strong>No materials found for "${searchTerm}"</strong><br>
+                <small>Try a different search term or</small><br>
+                <button onclick="showAddForm()" class="btn-add" style="margin-top: 15px;">➕ Add New Material</button>
+                <button onclick="clearSearch()" style="margin-left: 10px; padding: 8px 16px;">Clear Search</button>
+            </td>
+        </tr>
+    `;
+}
+
+// Show search suggestions as user types
+function showSearchSuggestions(searchTerm) {
+    if (searchTerm.length < 2) return;
+    
+    // Get top 5 matches
+    let suggestions = materials
+        .map(m => ({
+            material: m,
+            relevance: getRelevanceScore(m, searchTerm)
+        }))
+        .filter(s => s.relevance > 0)
+        .sort((a, b) => b.relevance - a.relevance)
+        .slice(0, 5)
+        .map(s => s.material);
+    
+    if (suggestions.length === 0) return;
+    
+    // Create or update suggestions dropdown
+    let existingDropdown = document.getElementById('searchSuggestions');
+    if (existingDropdown) existingDropdown.remove();
+    
+    let dropdown = document.createElement('div');
+    dropdown.id = 'searchSuggestions';
+    dropdown.style.cssText = `
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: white;
+        border: 1px solid #ddd;
+        border-radius: 0 0 8px 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        z-index: 1000;
+        max-height: 300px;
+        overflow-y: auto;
+    `;
+    
+    suggestions.forEach(m => {
+        let item = document.createElement('div');
+        item.style.cssText = `
+            padding: 10px 15px;
+            cursor: pointer;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        `;
+        item.onmouseover = () => item.style.background = '#f5f5f5';
+        item.onmouseout = () => item.style.background = 'white';
+        item.onclick = () => {
+            document.getElementById('searchInput').value = m.code;
+            selectMaterial(m.code);
+            dropdown.remove();
+        };
+        
+        item.innerHTML = `
+            <div>
+                <strong>${m.code}</strong><br>
+                <small>${m.name}</small>
+            </div>
+            <span class="status-badge ${getStockStatus(m.stock) === 'Critical' ? 'status-critical' : 
+                                      getStockStatus(m.stock) === 'Low' ? 'status-low' : 'status-ok'}">
+                ${m.stock} ${m.unit}
+            </span>
+        `;
+        
+        dropdown.appendChild(item);
+    });
+    
+    // Position the dropdown under search box
+    let searchBox = document.querySelector('.search-box');
+    searchBox.style.position = 'relative';
+    searchBox.appendChild(dropdown);
+}
+
+// Calculate relevance score for suggestions
+function getRelevanceScore(material, searchTerm) {
+    let score = 0;
+    let searchLower = searchTerm.toLowerCase();
+    let nameLower = (material.name || '').toLowerCase();
+    let codeLower = (material.code || '').toLowerCase();
+    
+    if (codeLower === searchLower) score += 100;
+    else if (nameLower === searchLower) score += 90;
+    else if (codeLower.startsWith(searchLower)) score += 50;
+    else if (nameLower.startsWith(searchLower)) score += 40;
+    else if (codeLower.includes(searchLower)) score += 20;
+    else if (nameLower.includes(searchLower)) score += 10;
+    
+    return score;
+}
+
+// Clear search and show all materials
+function clearSearch() {
+    document.getElementById('searchInput').value = '';
+    updateTable();
+    hideSearchResults();
+}
+
+// Hide any search-specific UI
+function hideSearchResults() {
+    // Table will show all materials via updateTable()
+}
+
+// Legacy search function (keeping for compatibility)
+function searchMaterial(barcode) {
+    let searchTerm = barcode || document.getElementById('searchInput').value.trim();
+    if (!searchTerm || searchTerm === '') return;
+    performSmartSearch(searchTerm, true);
 }
 
 // Select material
@@ -437,33 +728,29 @@ function showEditCategoryForm(materialCode) {
     }
     
     console.log('Editing category for:', material);
-    console.log('All materials:', materials);
     
-    // Get ALL unique categories from ALL materials
-    let allCategories = [];
+    // Get ALL unique categories (case-insensitive, with proper capitalization)
+    let categoryMap = new Map(); // Use Map to store proper case version
     
-    // Add default categories first
-    let defaultCategories = ['Steel', 'Hardware', 'Consumables', 'Paint'];
-    defaultCategories.forEach(cat => {
-        if (!allCategories.includes(cat)) {
-            allCategories.push(cat);
-        }
-    });
-    
-    // Then add categories from materials
+    // First, collect all categories from materials
     materials.forEach(m => {
-        if (m && m.category && !allCategories.includes(m.category)) {
-            allCategories.push(m.category);
+        if (m && m.category) {
+            let lowerCat = m.category.toLowerCase();
+            // Store the properly capitalized version (first letter caps)
+            let properCat = m.category.charAt(0).toUpperCase() + m.category.slice(1).toLowerCase();
+            categoryMap.set(lowerCat, properCat);
         }
     });
     
-    allCategories.sort(); // Sort alphabetically
-    console.log('All categories found:', allCategories);
+    // Convert map to array and sort
+    let allCategories = Array.from(categoryMap.values()).sort();
+    
+    console.log('All unique categories:', allCategories);
     
     // Build dropdown options
     let options = '';
     allCategories.forEach(cat => {
-        let selected = (cat === material.category) ? 'selected' : '';
+        let selected = (cat.toLowerCase() === material.category.toLowerCase()) ? 'selected' : '';
         options += `<option value="${cat}" ${selected}>${cat}</option>`;
     });
     
@@ -526,11 +813,14 @@ function saveCategoryUpdate(code) {
             alert('Please enter a category name');
             return;
         }
+        // Capitalize first letter for new category
+        newCategory = newCategory.charAt(0).toUpperCase() + newCategory.slice(1).toLowerCase();
     } else {
-        newCategory = select.value;
+        newCategory = select.value; // Already properly capitalized from dropdown
     }
     
-    if (newCategory === material.category) {
+    // Check if actually changed (case-insensitive)
+    if (newCategory.toLowerCase() === material.category.toLowerCase()) {
         alert('Category unchanged');
         hideAllForms();
         selectMaterial(code);
@@ -681,17 +971,20 @@ function toggleCustomCategory() {
 function getSelectedCategory() {
     let select = document.getElementById('newCategory');
     let customInput = document.getElementById('customCategory');
+    let category;
     
     if (select.value === 'custom') {
-        return customInput.value.trim() || 'Misc';
+        category = customInput.value.trim() || 'Misc';
+    } else {
+        category = select.value;
     }
-    return select.value;
+    
+    // Standardize: first letter caps, rest lowercase
+    return category.charAt(0).toUpperCase() + category.slice(1).toLowerCase();
 }
-
 
 // ==================== CRUD OPERATIONS ====================
 
-// Add new material
 function saveNewMaterial() {
     let name = document.getElementById('newName').value.trim();
     let category = getSelectedCategory();
@@ -703,12 +996,34 @@ function saveNewMaterial() {
         return;
     }
     
-    // Generate unique code
-    let code = generateCode(name, category);
+    // Check for duplicates
+    let duplicate = checkDuplicateName(name);
+    if (duplicate) {
+        let confirmMsg = `⚠️ "${name}" is very similar to existing material:\n\n` +
+                        `Existing: ${duplicate.name} (ID: ${duplicate.code})\n` +
+                        `Stock: ${duplicate.stock} ${duplicate.unit}\n\n` +
+                        `Do you still want to add as new material?`;
+        
+        if (!confirm(confirmMsg)) {
+            if (confirm('View existing material instead?')) {
+                selectMaterial(duplicate.code);
+                hideAllForms();
+            }
+            return;
+        }
+    }
+    
+    // Generate random 6-digit ID
+    let id = generateRandomId();
+    
+    // Make sure ID is unique
+    while (materials.some(m => m && m.code === id)) {
+        id = generateRandomId();
+    }
     
     let newMaterial = {
         id: Date.now(),
-        code: code,
+        code: id,
         name: name,
         category: category,
         stock: stock,
@@ -722,7 +1037,7 @@ function saveNewMaterial() {
     activities.unshift({
         id: Date.now(),
         action: 'ADD',
-        material_code: code,
+        material_code: id,
         material_name: name,
         quantity: stock,
         timestamp: new Date().toLocaleString()
@@ -731,9 +1046,9 @@ function saveNewMaterial() {
     
     updateTable();
     hideAllForms();
-    selectMaterial(code);
+    selectMaterial(id);
     
-    alert(`✅ Material added!\nCode: ${code}`);
+    alert(`✅ Material added!\nID: ${id}`);
     
     // Clear form
     document.getElementById('newName').value = '';
@@ -978,6 +1293,7 @@ function setupButtonHandlers() {
     
     document.getElementById('searchInput').onkeypress = function(e) {
         if (e.key === 'Enter') {
+            e.preventDefault();
             searchMaterial();
         }
     };
@@ -1218,15 +1534,47 @@ document.addEventListener('keydown', function(e) {
     }
 });
 
-// ==================== INITIALIZATION ====================
 
+
+// Run this once to clean up existing categories
+function cleanupCategories() {
+    console.log('🧹 Cleaning up category case inconsistencies...');
+    let changed = false;
+    
+    materials = materials.map(m => {
+        if (m && m.category) {
+            // Standardize to first letter caps, rest lowercase
+            let properCat = m.category.charAt(0).toUpperCase() + m.category.slice(1).toLowerCase();
+            if (m.category !== properCat) {
+                console.log(`  Fixing: "${m.category}" → "${properCat}"`);
+                m.category = properCat;
+                changed = true;
+            }
+        }
+        return m;
+    });
+    
+    if (changed) {
+        saveMaterials();
+        console.log('✅ Categories cleaned up!');
+        updateTable();
+        updateCategoryFilter();
+    } else {
+        console.log('✅ No category cleanup needed');
+    }
+}
+
+// Run it after initialization
 document.addEventListener('DOMContentLoaded', function() {
     initDatabase();
     setupButtonHandlers();
     setupScannerDetection();
+    setupEnhancedSearch();
     document.getElementById('searchInput').focus();
+    
+    // Run cleanup after a short delay
+    setTimeout(cleanupCategories, 1000);
 });
-
 
 // ==================== GLOBAL FUNCTIONS ====================
 
@@ -1261,9 +1609,8 @@ function repairData() {
         
         // Add missing fields with defaults
         if (!fixed.code) {
-            fixed.code = 'FIX-' + Date.now() + Math.floor(Math.random() * 1000);
-            needsFix = true;
-        }
+            fixed.code = Math.floor(100000 + Math.random() * 900000).toString();
+            }
         if (!fixed.name) fixed.name = 'Unknown', needsFix = true;
         if (!fixed.category) fixed.category = 'Steel', needsFix = true;
         if (fixed.stock === undefined || fixed.stock === null) fixed.stock = 0, needsFix = true;
